@@ -1,0 +1,72 @@
+name: Generate & Queue Post
+
+on:
+  schedule:
+    # Runs every 15 minutes. This does NOT mean you post every 15 min -
+    # main.py checks Supabase's posting_windows setting each time and only
+    # generates a post when NOW is close to one of the times you configured
+    # in the admin panel. Change your posting times there, not here.
+    - cron: '*/15 * * * *'
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      topic_override:
+        description: 'Optional: Force a specific topic name'
+        required: false
+        default: ''
+      tone_override:
+        description: 'Optional: Force a specific tone name'
+        required: false
+        default: ''
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('engine/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache sentence-transformers model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-all-MiniLM-L6-v2
+
+      - name: Install dependencies
+        working-directory: engine
+        run: pip install -r requirements.txt
+
+      - name: Run post generator
+        working-directory: engine
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_ACCOUNT_ID: ${{ secrets.IG_ACCOUNT_ID }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          APPROVAL_TO_EMAIL: ${{ secrets.APPROVAL_TO_EMAIL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: python main.py
+
+      - name: Log run result
+        if: always()
+        run: echo "Generate workflow finished with status: ${{ job.status }}"
