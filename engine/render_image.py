@@ -16,7 +16,7 @@ FONT_DIR = Path(__file__).parent / "fonts"
 def hex_to_rgb(hex_color: str) -> tuple:
     """Convert #RRGGBB string to (R, G, B) tuple."""
     hex_color = hex_color.lstrip("#")
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 
 def create_gradient_background(width: int, height: int, color_from: str, color_to: str) -> Image.Image:
@@ -67,7 +67,6 @@ def get_font(size: int, bold: bool = False):
     except (IOError, OSError) as e:
         print(f"Could not load truetype font: {e}. Falling back to default.")
         return ImageFont.load_default()
-
 
 
 def draw_text_centered(

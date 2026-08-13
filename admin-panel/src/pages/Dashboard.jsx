@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchPosts, fetchTopics, fetchTones, fetchSettings, updatePostStatus } from '../lib/supabase'
+import { fetchPosts, fetchTopics, fetchSettings, updatePostStatus } from '../lib/supabase'
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true)

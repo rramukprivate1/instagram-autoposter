@@ -53,7 +53,7 @@ def wait_for_container(container_id: str, max_retries: int = 10) -> None:
         resp = requests.get(url, params={"fields": "status_code", "access_token": IG_ACCESS_TOKEN})
         resp.raise_for_status()
         status = resp.json().get("status_code", "")
-        logger.info(f"Container status [{attempt+1}/{max_retries}]: {status}")
+        logger.info(f"Container status [{attempt + 1}/{max_retries}]: {status}")
         if status == "FINISHED":
             return
         if status == "ERROR":

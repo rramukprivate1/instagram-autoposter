@@ -24,6 +24,17 @@ def build_email_html(post: dict) -> str:
     topic = post.get("topic_name", "Unknown")
     tone = post.get("tone_name", "Unknown")
 
+    if image_url:
+        image_block = (
+            f'<img src="{image_url}" alt="Quote Card" '
+            'style="width:100%;border-radius:16px;display:block;margin-bottom:24px;">'
+        )
+    else:
+        image_block = (
+            '<div style="background:#1a1a1a;border-radius:16px;padding:40px;'
+            'text-align:center;color:#888;">Image preview not available</div>'
+        )
+
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -32,7 +43,8 @@ def build_email_html(post: dict) -> str:
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>New Instagram Post Ready for Approval</title>
     </head>
-    <body style="margin:0;padding:0;background:#0d0d0d;font-family:'Segoe UI',Helvetica,Arial,sans-serif;color:#f0f0f0;">
+    <body style="margin:0;padding:0;background:#0d0d0d;
+      font-family:'Segoe UI',Helvetica,Arial,sans-serif;color:#f0f0f0;">
       <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
 
         <!-- Header -->
@@ -42,40 +54,50 @@ def build_email_html(post: dict) -> str:
         </div>
 
         <!-- Image Preview -->
-        {'<img src="' + image_url + '" alt="Quote Card" style="width:100%;border-radius:16px;display:block;margin-bottom:24px;">' if image_url else '<div style="background:#1a1a1a;border-radius:16px;padding:40px;text-align:center;color:#888;">Image preview not available</div>'}
+        {image_block}
 
         <!-- Quote -->
-        <div style="background:#111;border-left:4px solid #7c3aed;padding:20px 24px;border-radius:0 12px 12px 0;margin-bottom:20px;">
+        <div style="background:#111;border-left:4px solid #7c3aed;padding:20px 24px;
+          border-radius:0 12px 12px 0;margin-bottom:20px;">
           <p style="font-size:20px;font-style:italic;color:#fff;margin:0;line-height:1.5;">&ldquo;{quote}&rdquo;</p>
         </div>
 
         <!-- Meta Info -->
         <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-          <span style="background:#1a1a2e;color:#818cf8;padding:6px 14px;border-radius:20px;font-size:13px;">📂 {topic}</span>
-          <span style="background:#1a1a2e;color:#34d399;padding:6px 14px;border-radius:20px;font-size:13px;">🎭 {tone}</span>
+          <span style="background:#1a1a2e;color:#818cf8;padding:6px 14px;
+            border-radius:20px;font-size:13px;">📂 {topic}</span>
+          <span style="background:#1a1a2e;color:#34d399;padding:6px 14px;
+            border-radius:20px;font-size:13px;">🎭 {tone}</span>
         </div>
 
         <!-- Caption -->
         <div style="margin-bottom:16px;">
-          <p style="font-size:12px;color:#666;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Caption</p>
+          <p style="font-size:12px;color:#666;margin-bottom:4px;
+            text-transform:uppercase;letter-spacing:1px;">Caption</p>
           <p style="font-size:15px;color:#d1d5db;margin:0;">{caption}</p>
         </div>
 
         <!-- Hashtags -->
         <div style="margin-bottom:32px;">
-          <p style="font-size:12px;color:#666;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Hashtags</p>
+          <p style="font-size:12px;color:#666;margin-bottom:4px;
+            text-transform:uppercase;letter-spacing:1px;">Hashtags</p>
           <p style="font-size:13px;color:#7c3aed;margin:0;">{hashtags}</p>
         </div>
 
         <!-- Approve / Reject Buttons -->
         <div style="display:flex;gap:16px;justify-content:center;margin-bottom:40px;">
-          <a href="{approve_url}" style="display:inline-block;background:#16a34a;color:#fff;padding:16px 36px;border-radius:12px;font-size:18px;font-weight:700;text-decoration:none;">✅ Approve & Schedule</a>
-          <a href="{reject_url}" style="display:inline-block;background:#dc2626;color:#fff;padding:16px 36px;border-radius:12px;font-size:18px;font-weight:700;text-decoration:none;">❌ Reject</a>
+          <a href="{approve_url}" style="display:inline-block;background:#16a34a;color:#fff;
+            padding:16px 36px;border-radius:12px;font-size:18px;font-weight:700;
+            text-decoration:none;">✅ Approve & Schedule</a>
+          <a href="{reject_url}" style="display:inline-block;background:#dc2626;color:#fff;
+            padding:16px 36px;border-radius:12px;font-size:18px;font-weight:700;
+            text-decoration:none;">❌ Reject</a>
         </div>
 
         <!-- Footer -->
         <div style="text-align:center;border-top:1px solid #222;padding-top:24px;">
-          <p style="font-size:12px;color:#555;margin:0;">Instagram Auto-Poster &bull; This link is single-use and secure.</p>
+          <p style="font-size:12px;color:#555;margin:0;">Instagram Auto-Poster &bull;
+            This link is single-use and secure.</p>
         </div>
       </div>
     </body>

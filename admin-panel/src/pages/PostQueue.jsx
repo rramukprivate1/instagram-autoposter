@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { fetchPosts, updatePostStatus } from '../lib/supabase'
 
 export default function PostQueue() {
@@ -6,17 +6,17 @@ export default function PostQueue() {
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadPosts()
-  }, [filter])
-
-  const loadPosts = async () => {
+  const loadPosts = useCallback(async () => {
     setLoading(true)
     const statusFilter = filter === 'all' ? null : filter
     const { data } = await fetchPosts(statusFilter, 60)
     setPosts(data || [])
     setLoading(false)
-  }
+  }, [filter])
+
+  useEffect(() => {
+    loadPosts()
+  }, [loadPosts])
 
   const handleAction = async (id, status) => {
     await updatePostStatus(id, status)
@@ -62,7 +62,7 @@ export default function PostQueue() {
         <div className="card empty-state">
           <div className="empty-icon">📭</div>
           <h3>No posts found</h3>
-          <p>No posts matching filter "{filter}". Trigger a generation run from GitHub Actions to create posts.</p>
+          <p>No posts matching filter &quot;{filter}&quot;. Trigger a generation run from GitHub Actions to create posts.</p>
         </div>
       ) : (
         <div className="post-grid">

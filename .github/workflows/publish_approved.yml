@@ -44,4 +44,5 @@ jobs:
 
       - name: Log run result
         if: always()
-        run: echo "Publish workflow finished with status: ${{ job.status }}"
+        run: |
+          echo "Publish workflow finished with status: ${{ job.status }}"

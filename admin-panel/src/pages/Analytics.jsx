@@ -3,7 +3,6 @@ import { fetchPosts, fetchLogs } from '../lib/supabase'
 
 export default function Analytics() {
   const [loading, setLoading] = useState(true)
-  const [posts, setPosts] = useState([])
   const [logs, setLogs] = useState([])
   const [stats, setStats] = useState({ total: 0, published: 0, rejected: 0, approvalRate: 0 })
 
@@ -25,7 +24,6 @@ export default function Analytics() {
       const approved = allPosts.filter(p => p.status === 'approved' || p.status === 'published').length
       const totalDecided = approved + rejected
 
-      setPosts(allPosts)
       setLogs(logsRes.data || [])
       setStats({
         total: allPosts.length,

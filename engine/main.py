@@ -21,7 +21,6 @@ the owner changes posting_windows from the admin panel, not by editing
 YAML - this file is what makes that actually take effect without a
 code change or a redeploy.
 """
-import os
 import sys
 import json
 import uuid
@@ -159,7 +158,10 @@ def create_single_post(supabase, topic, tone, custom_context, watermark, cta_tex
     return post_id, post_record
 
 
-def create_carousel_post(supabase, topic, tone, custom_context, watermark, cta_text, auto_post, min_slides, max_slides) -> str:
+def create_carousel_post(
+    supabase, topic, tone, custom_context, watermark, cta_text,
+    auto_post, min_slides, max_slides,
+) -> str:
     slide_count = random.randint(min_slides, max_slides)
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         series = generate_quote_series(topic, tone, slide_count, custom_context)
@@ -212,7 +214,8 @@ def run() -> None:
     try:
         posting_windows = json.loads(settings.get("posting_windows", "[]"))
     except (json.JSONDecodeError, TypeError):
-        logger.error(f"posting_windows setting isn't valid JSON: {settings.get('posting_windows')!r}. Treating as empty.")
+        raw = settings.get('posting_windows')
+        logger.error(f"posting_windows isn't valid JSON: {raw!r}. Treating as empty.")
         posting_windows = []
     tolerance = int(settings.get("slot_tolerance_minutes", "10"))
 

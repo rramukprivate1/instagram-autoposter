@@ -69,4 +69,5 @@ jobs:
 
       - name: Log run result
         if: always()
-        run: echo "Generate workflow finished with status: ${{ job.status }}"
+        run: |
+          echo "Generate workflow finished with status: ${{ job.status }}"

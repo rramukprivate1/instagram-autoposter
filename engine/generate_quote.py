@@ -102,7 +102,8 @@ IMPORTANT RULES:
 - No engagement-bait phrasing ("comment X to see more", fake urgency, etc.) - Instagram
   down-ranks this and it isn't the kind of account this is.
 - Output ONLY valid JSON — no markdown, no explanation. Format:
-{{"slides": ["...", "...", "..."], "caption": "...", "hashtags": ["tag1", "tag2", ...], "bg_from": "#hexcode", "bg_to": "#hexcode"}}"""
+{{"slides": ["...", "...", "..."], "caption": "...", "hashtags": ["tag1", "tag2", ...],
+"bg_from": "#hexcode", "bg_to": "#hexcode"}}"""
 
 
 def generate_quote_series(topic: dict, tone: dict, slide_count: int = 4, custom_context: str = "") -> dict:
@@ -143,6 +144,12 @@ def generate_quote_series(topic: dict, tone: dict, slide_count: int = 4, custom_
 if __name__ == "__main__":
     # Quick test
     test_topic = {"name": "Self Motivation", "description": "Quotes that inspire internal drive and personal growth"}
-    test_tone = {"name": "Friend", "description": "Warm, casual, like advice from a close friend who has been through it"}
-    result = generate_quote(test_topic, test_tone, "Make it feel like a late night text from a best friend")
+    test_tone = {
+        "name": "Friend",
+        "description": "Warm, casual, like advice from a close friend who has been through it",
+    }
+    result = generate_quote(
+        test_topic, test_tone,
+        "Make it feel like a late night text from a best friend",
+    )
     print(json.dumps(result, indent=2))

@@ -140,7 +140,7 @@ export default function ScheduleSettings() {
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>🗓️ Posting Times</h2>
           <p className="text-sm text-muted mb-4">
             The exact clock times a post is allowed to go out. The generator checks every 15 minutes
-            and only creates a post when it's close to one of these times - add, remove, or retime
+            and only creates a post when it&apos;s close to one of these times - add, remove, or retime
             these whenever you want without touching any code.
           </p>
 
@@ -180,8 +180,8 @@ export default function ScheduleSettings() {
         <div className="card mb-6">
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>🎠 Carousel / Sequence Posts</h2>
           <p className="text-sm text-muted mb-6">
-            A carousel is one post with several swipeable slides on the same topic (e.g. "5 signs you need
-            rest"). These tend to get more time-on-post than a single image, which genuinely helps reach -
+            A carousel is one post with several swipeable slides on the same topic (e.g. &quot;5 signs you need
+            rest&quot;). These tend to get more time-on-post than a single image, which genuinely helps reach -
             this is a legitimate Instagram-native format, not a workaround.
           </p>
 
