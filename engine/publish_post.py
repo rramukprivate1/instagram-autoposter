@@ -7,7 +7,10 @@ import time
 import logging
 import requests
 from supabase import create_client
+import config
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY, IG_ACCESS_TOKEN, IG_ACCOUNT_ID
+
+config.require(["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "IG_ACCESS_TOKEN", "IG_ACCOUNT_ID"])
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

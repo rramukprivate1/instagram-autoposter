@@ -6,7 +6,10 @@ and have already been published. This keeps storage usage near zero.
 import logging
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
+import config
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+config.require(["SUPABASE_URL", "SUPABASE_SERVICE_KEY"])
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

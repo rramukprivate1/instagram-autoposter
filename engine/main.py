@@ -30,11 +30,17 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from supabase import create_client
+import config
 from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from generate_quote import generate_quote, generate_quote_series
 from duplicate_check import is_duplicate, save_embedding
 from render_image import render_quote_card, render_carousel_slides
 from send_email import send_approval_email
+
+config.require([
+    "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "GEMINI_API_KEY",
+    "RESEND_API_KEY", "APPROVAL_TO_EMAIL", "APP_BASE_URL",
+])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
