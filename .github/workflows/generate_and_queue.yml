@@ -11,12 +11,17 @@ on:
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
+      force_now:
+        description: 'Post right now, ignoring configured Posting Times'
+        required: false
+        type: boolean
+        default: false
       topic_override:
-        description: 'Optional: Force a specific topic name'
+        description: 'Optional: force a specific topic name (must match exactly)'
         required: false
         default: ''
       tone_override:
-        description: 'Optional: Force a specific tone name'
+        description: 'Optional: force a specific tone name (must match exactly)'
         required: false
         default: ''
 
@@ -65,6 +70,9 @@ jobs:
           RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
           APPROVAL_TO_EMAIL: ${{ secrets.APPROVAL_TO_EMAIL }}
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          FORCE_NOW: ${{ github.event.inputs.force_now }}
+          TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
+          TONE_OVERRIDE: ${{ github.event.inputs.tone_override }}
         run: python main.py
 
       - name: Log run result

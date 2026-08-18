@@ -21,6 +21,7 @@ the owner changes posting_windows from the admin panel, not by editing
 YAML - this file is what makes that actually take effect without a
 code change or a redeploy.
 """
+import os
 import sys
 import json
 import uuid
@@ -216,6 +217,10 @@ def run() -> None:
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     settings = load_settings(supabase)
 
+    force_now = os.environ.get("FORCE_NOW", "").strip().lower() == "true"
+    topic_override = os.environ.get("TOPIC_OVERRIDE", "").strip()
+    tone_override = os.environ.get("TONE_OVERRIDE", "").strip()
+
     tz_name = settings.get("timezone", "Asia/Kolkata")
     try:
         posting_windows = json.loads(settings.get("posting_windows", "[]"))
@@ -226,18 +231,20 @@ def run() -> None:
     tolerance = int(settings.get("slot_tolerance_minutes", "10"))
 
     now_local = datetime.now(ZoneInfo(tz_name))
-    slot = get_current_slot(now_local, posting_windows, tolerance)
-
-    if not slot:
-        logger.info(f"No posting window due right now ({now_local.strftime('%H:%M')} {tz_name}). Exiting.")
-        return
-
     slot_date = now_local.date().isoformat()
-    if has_slot_fired(supabase, slot_date, slot):
-        logger.info(f"Slot {slot} already posted today. Exiting.")
-        return
 
-    logger.info(f"Slot {slot} is due and hasn't fired today - generating a post.")
+    if force_now:
+        logger.info("FORCE_NOW is set - posting immediately, ignoring configured Posting Times.")
+        slot = None  # not tied to any configured slot, so nothing gets marked as "fired" for it
+    else:
+        slot = get_current_slot(now_local, posting_windows, tolerance)
+        if not slot:
+            logger.info(f"No posting window due right now ({now_local.strftime('%H:%M')} {tz_name}). Exiting.")
+            return
+        if has_slot_fired(supabase, slot_date, slot):
+            logger.info(f"Slot {slot} already posted today. Exiting.")
+            return
+        logger.info(f"Slot {slot} is due and hasn't fired today - generating a post.")
 
     topics = load_active_topics(supabase)
     tones = load_active_tones(supabase)
@@ -248,11 +255,32 @@ def run() -> None:
         logger.error("No active tones found. Add tones in the admin panel.")
         sys.exit(1)
 
-    recent_topic_id = load_most_recent_topic_id(supabase)
-    topic = pick_topic(topics, recent_topic_id)
-    tone = random.choice(tones)
+    if topic_override:
+        matched = next((t for t in topics if t["name"].lower() == topic_override.lower()), None)
+        if not matched:
+            logger.error(f"topic_override '{topic_override}' doesn't match any active topic name. Exiting.")
+            sys.exit(1)
+        topic = matched
+        logger.info(f"Using topic_override: {topic['name']}")
+    else:
+        recent_topic_id = load_most_recent_topic_id(supabase)
+        topic = pick_topic(topics, recent_topic_id)
+
+    if tone_override:
+        matched = next((t for t in tones if t["name"].lower() == tone_override.lower()), None)
+        if not matched:
+            logger.error(f"tone_override '{tone_override}' doesn't match any active tone name. Exiting.")
+            sys.exit(1)
+        tone = matched
+        logger.info(f"Using tone_override: {tone['name']}")
+    else:
+        tone = random.choice(tones)
+
     custom_context = settings.get("custom_context", "")
-    watermark = settings.get("ig_handle", "@yourhandle")
+    # Empty by default - showing nothing looks like a deliberate clean design
+    # choice; showing a literal "@yourhandle" placeholder on a real published
+    # post looks like a bug, because it is one if this isn't set.
+    watermark = settings.get("ig_handle", "").strip()
     cta_text = settings.get("cta_text", "").strip()
     auto_post = settings.get("auto_post", "false").lower() == "true"
     carousel_probability = float(settings.get("carousel_probability", "0.25"))
@@ -278,7 +306,9 @@ def run() -> None:
 
     # Only mark the slot fired once a post actually exists - protects
     # against a transient failure permanently losing this slot for today.
-    mark_slot_fired(supabase, slot_date, slot)
+    # Forced runs aren't tied to a configured slot, so there's nothing to mark.
+    if slot:
+        mark_slot_fired(supabase, slot_date, slot)
 
     if not auto_post:
         email_data = {**post_record, "topic_name": topic["name"], "tone_name": tone["name"]}
