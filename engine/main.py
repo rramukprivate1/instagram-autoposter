@@ -82,18 +82,39 @@ def pick_topic(topics: list, recent_topic_id) -> dict:
 # Posting-window slot matching
 # ------------------------------------------------------------------
 
-def get_current_slot(now_local: datetime, posting_windows: list, tolerance_minutes: int):
+def apply_jitter(base_time: str, date_str: str, max_jitter_minutes: int) -> str:
+    """
+    Shifts a configured posting time by a random-looking but deterministic
+    offset, unique to that day+slot combination. Same slot lands at a
+    different actual minute each day (e.g. 08:00 becomes 07:44 today,
+    08:19 tomorrow) without needing to persist anything - re-deriving the
+    same seed on every 15-min check within the same day always gives the
+    same jittered target, so it doesn't drift mid-day.
+    """
+    if max_jitter_minutes <= 0:
+        return base_time
+    rng = random.Random(f"{date_str}-{base_time}")
+    offset = rng.randint(-max_jitter_minutes, max_jitter_minutes)
+    h, m = map(int, base_time.split(":"))
+    total = max(0, min(23 * 60 + 59, h * 60 + m + offset))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def get_current_slot(now_local: datetime, posting_windows: list, tolerance_minutes: int, jitter_minutes: int = 0):
     """
     Returns the matching 'HH:MM' string from posting_windows if now_local
-    is within tolerance_minutes of it, else None.
+    is within tolerance_minutes of it (after applying that day's jitter),
+    else None.
     Note: doesn't handle windows that wrap midnight (e.g. '23:55') specially -
     not needed for a same-day posting schedule, but worth knowing if you add one.
     """
+    date_str = now_local.date().isoformat()
     now_minutes = now_local.hour * 60 + now_local.minute
-    for slot in posting_windows:
-        h, m = map(int, slot.split(":"))
+    for base_slot in posting_windows:
+        jittered = apply_jitter(base_slot, date_str, jitter_minutes)
+        h, m = map(int, jittered.split(":"))
         if abs(now_minutes - (h * 60 + m)) <= tolerance_minutes:
-            return slot
+            return base_slot  # return the BASE slot name for has_slot_fired/mark_slot_fired bookkeeping
     return None
 
 
@@ -229,6 +250,7 @@ def run() -> None:
         logger.error(f"posting_windows isn't valid JSON: {raw!r}. Treating as empty.")
         posting_windows = []
     tolerance = int(settings.get("slot_tolerance_minutes", "10"))
+    jitter_minutes = int(settings.get("posting_time_jitter_minutes", "20"))
 
     now_local = datetime.now(ZoneInfo(tz_name))
     slot_date = now_local.date().isoformat()
@@ -237,7 +259,7 @@ def run() -> None:
         logger.info("FORCE_NOW is set - posting immediately, ignoring configured Posting Times.")
         slot = None  # not tied to any configured slot, so nothing gets marked as "fired" for it
     else:
-        slot = get_current_slot(now_local, posting_windows, tolerance)
+        slot = get_current_slot(now_local, posting_windows, tolerance, jitter_minutes)
         if not slot:
             logger.info(f"No posting window due right now ({now_local.strftime('%H:%M')} {tz_name}). Exiting.")
             return

@@ -10,6 +10,7 @@ export default function ScheduleSettings() {
   const [ctaText, setCtaText] = useState('')
   const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [postingWindows, setPostingWindows] = useState([])
+  const [jitterMinutes, setJitterMinutes] = useState(20)
   const [newWindowTime, setNewWindowTime] = useState('09:00')
   const [carouselProbability, setCarouselProbability] = useState(25)
   const [minSlides, setMinSlides] = useState(3)
@@ -34,6 +35,9 @@ export default function ScheduleSettings() {
       if (settings.posting_windows) {
         try { setPostingWindows(JSON.parse(settings.posting_windows)) }
         catch { setPostingWindows([]) }
+      }
+      if (settings.posting_time_jitter_minutes !== undefined) {
+        setJitterMinutes(parseInt(settings.posting_time_jitter_minutes))
       }
       if (settings.carousel_probability) setCarouselProbability(Math.round(parseFloat(settings.carousel_probability) * 100))
       if (settings.carousel_min_slides) setMinSlides(parseInt(settings.carousel_min_slides))
@@ -83,6 +87,7 @@ export default function ScheduleSettings() {
         updateSetting('cta_text', ctaText),
         updateSetting('timezone', timezone),
         updateSetting('posting_windows', JSON.stringify(postingWindows)),
+        updateSetting('posting_time_jitter_minutes', jitterMinutes.toString()),
         updateSetting('carousel_probability', (carouselProbability / 100).toString()),
         updateSetting('carousel_min_slides', minSlides.toString()),
         updateSetting('carousel_max_slides', maxSlides.toString()),
@@ -173,6 +178,29 @@ export default function ScheduleSettings() {
               onChange={(e) => setNewWindowTime(e.target.value)}
             />
             <button type="button" className="btn btn-secondary" onClick={addWindow}>+ Add time</button>
+          </div>
+
+          <div className="form-group mt-4">
+            <label className="form-label">Randomize each time by up to (minutes)</label>
+            <div className="slider-row">
+              <input
+                type="range"
+                min="0"
+                max="45"
+                step="5"
+                value={jitterMinutes}
+                onChange={(e) => setJitterMinutes(parseInt(e.target.value))}
+                className="slider"
+              />
+              <span className="slider-value">
+                {jitterMinutes === 0 ? 'Off - exact times' : `± ${jitterMinutes} min`}
+              </span>
+            </div>
+            <p className="text-sm text-muted mt-2">
+              Posting at the exact same minute every single day is a mechanical pattern.
+              This shifts each time by a different random amount each day (e.g. 08:00 might
+              land at 07:44 today, 08:19 tomorrow) so the schedule doesn't look automated.
+            </p>
           </div>
         </div>
 

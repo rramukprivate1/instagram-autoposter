@@ -148,16 +148,30 @@ def publish_container(container_id: str) -> str:
 
 
 def publish_approved_posts() -> None:
-    """Fetches all approved posts from Supabase and publishes them to Instagram."""
+    """
+    Fetches the SINGLE oldest approved post and publishes it. Deliberately
+    limited to one per run - if this fetched and published every approved
+    post at once, approving several posts in a row would make them all go
+    live within the same run, seconds apart, which looks nothing like
+    natural posting behavior. One per 30-minute run cycle keeps real
+    spacing between posts regardless of how many you approve at once.
+    """
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    result = supabase.table("posts").select("*").eq("status", "approved").execute()
+    result = (
+        supabase.table("posts")
+        .select("*")
+        .eq("status", "approved")
+        .order("created_at")
+        .limit(1)
+        .execute()
+    )
     posts = result.data
 
     if not posts:
         logger.info("No approved posts to publish.")
         return
 
-    logger.info(f"Found {len(posts)} approved post(s) to publish.")
+    logger.info(f"Publishing the oldest approved post ({len(posts)} of possibly more waiting).")
 
     for post in posts:
         try:
