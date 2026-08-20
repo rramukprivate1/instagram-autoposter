@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { fetchPosts, updatePostStatus } from '../lib/supabase'
+import { fetchPosts, updatePostStatus, fetchPostSlides, deleteSlide } from '../lib/supabase'
 
 export default function PostQueue() {
   const [posts, setPosts] = useState([])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [slidesByPost, setSlidesByPost] = useState({})   // { [postId]: [slideRow, ...] }
+  const [slideIndexByPost, setSlideIndexByPost] = useState({})  // { [postId]: currentIndex }
 
   const loadPosts = useCallback(async () => {
     setLoading(true)
@@ -12,6 +14,12 @@ export default function PostQueue() {
     const { data } = await fetchPosts(statusFilter, 60)
     setPosts(data || [])
     setLoading(false)
+
+    const carouselPosts = (data || []).filter((p) => p.post_format === 'carousel')
+    const slideResults = await Promise.all(
+      carouselPosts.map((p) => fetchPostSlides(p.id).then((r) => [p.id, r.data || []]))
+    )
+    setSlidesByPost(Object.fromEntries(slideResults))
   }, [filter])
 
   useEffect(() => {
@@ -21,6 +29,23 @@ export default function PostQueue() {
   const handleAction = async (id, status) => {
     await updatePostStatus(id, status)
     loadPosts()
+  }
+
+  const goToSlide = (postId, index) => {
+    setSlideIndexByPost((prev) => ({ ...prev, [postId]: index }))
+  }
+
+  const handleRemoveSlide = async (postId, slide) => {
+    const remaining = slidesByPost[postId] || []
+    if (remaining.length <= 2) {
+      alert('A carousel needs at least 2 slides - reject the whole post instead if none of it works.')
+      return
+    }
+    if (!window.confirm('Remove this slide from the carousel? This can\'t be undone.')) return
+    await deleteSlide(slide.id)
+    const updated = remaining.filter((s) => s.id !== slide.id)
+    setSlidesByPost((prev) => ({ ...prev, [postId]: updated }))
+    setSlideIndexByPost((prev) => ({ ...prev, [postId]: 0 }))
   }
 
   const getStatusBadge = (status) => {
@@ -66,15 +91,68 @@ export default function PostQueue() {
         </div>
       ) : (
         <div className="post-grid">
-          {posts.map((post) => (
-            <div key={post.id} className="post-card">
-              {post.image_url ? (
-                <img src={post.image_url} alt="Quote Card" className="post-card-image" />
-              ) : (
-                <div className="post-card-image flex items-center justify-center text-muted" style={{ background: '#111' }}>
-                  No Image Preview
-                </div>
-              )}
+          {posts.map((post) => {
+            const isCarousel = post.post_format === 'carousel'
+            const slides = slidesByPost[post.id] || []
+            const currentIndex = slideIndexByPost[post.id] || 0
+            const currentSlide = isCarousel ? slides[currentIndex] : null
+            const displayImageUrl = isCarousel ? (currentSlide?.image_url || post.image_url) : post.image_url
+
+            return (
+              <div key={post.id} className="post-card">
+                {displayImageUrl ? (
+                  <div style={{ position: 'relative' }}>
+                    <img src={displayImageUrl} alt="Quote Card" className="post-card-image" />
+
+                    {isCarousel && slides.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => goToSlide(post.id, (currentIndex - 1 + slides.length) % slides.length)}
+                          aria-label="Previous slide"
+                          className="carousel-nav-btn carousel-nav-prev"
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goToSlide(post.id, (currentIndex + 1) % slides.length)}
+                          aria-label="Next slide"
+                          className="carousel-nav-btn carousel-nav-next"
+                        >
+                          ›
+                        </button>
+
+                        <div className="carousel-dots">
+                          {slides.map((s, i) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => goToSlide(post.id, i)}
+                              aria-label={`Go to slide ${i + 1}`}
+                              className={`carousel-dot ${i === currentIndex ? 'carousel-dot-active' : ''}`}
+                            />
+                          ))}
+                        </div>
+
+                        {post.status === 'pending' && (
+                          <button
+                            type="button"
+                            className="carousel-remove-btn"
+                            onClick={() => handleRemoveSlide(post.id, currentSlide)}
+                            title="Remove this slide from the carousel"
+                          >
+                            🗑 Remove slide {currentIndex + 1} of {slides.length}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="post-card-image flex items-center justify-center text-muted" style={{ background: '#111' }}>
+                    No Image Preview
+                  </div>
+                )}
 
               <div className="post-card-body">
                 <p className="post-card-quote">&ldquo;{post.quote}&rdquo;</p>
@@ -103,8 +181,9 @@ export default function PostQueue() {
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { fetchSettings, updateSetting } from '../lib/supabase'
+import { fetchSettings, updateSetting, uploadLogo } from '../lib/supabase'
 
 export default function ScheduleSettings() {
   const [loading, setLoading] = useState(true)
@@ -8,6 +8,9 @@ export default function ScheduleSettings() {
   const [customContext, setCustomContext] = useState('')
   const [igHandle, setIgHandle] = useState('@yourhandle')
   const [ctaText, setCtaText] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [tagline, setTagline] = useState('')
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [timezone, setTimezone] = useState('Asia/Kolkata')
   const [postingWindows, setPostingWindows] = useState([])
   const [jitterMinutes, setJitterMinutes] = useState(20)
@@ -31,6 +34,8 @@ export default function ScheduleSettings() {
       if (settings.custom_context) setCustomContext(settings.custom_context)
       if (settings.ig_handle) setIgHandle(settings.ig_handle)
       if (settings.cta_text !== undefined) setCtaText(settings.cta_text)
+      if (settings.logo_url !== undefined) setLogoUrl(settings.logo_url)
+      if (settings.watermark_tagline !== undefined) setTagline(settings.watermark_tagline)
       if (settings.timezone) setTimezone(settings.timezone)
       if (settings.posting_windows) {
         try { setPostingWindows(JSON.parse(settings.posting_windows)) }
@@ -74,6 +79,26 @@ export default function ScheduleSettings() {
     setPostingWindows([...new Set(windows)].sort())
   }
 
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingLogo(true)
+    try {
+      const url = await uploadLogo(file)
+      await updateSetting('logo_url', url)
+      setLogoUrl(url)
+    } catch (err) {
+      alert('Logo upload failed: ' + err.message)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const handleRemoveLogo = async () => {
+    await updateSetting('logo_url', '')
+    setLogoUrl('')
+  }
+
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -85,6 +110,7 @@ export default function ScheduleSettings() {
         updateSetting('custom_context', customContext),
         updateSetting('ig_handle', igHandle),
         updateSetting('cta_text', ctaText),
+        updateSetting('watermark_tagline', tagline),
         updateSetting('timezone', timezone),
         updateSetting('posting_windows', JSON.stringify(postingWindows)),
         updateSetting('posting_time_jitter_minutes', jitterMinutes.toString()),
@@ -199,7 +225,7 @@ export default function ScheduleSettings() {
             <p className="text-sm text-muted mt-2">
               Posting at the exact same minute every single day is a mechanical pattern.
               This shifts each time by a different random amount each day (e.g. 08:00 might
-              land at 07:44 today, 08:19 tomorrow) so the schedule doesn't look automated.
+              land at 07:44 today, 08:19 tomorrow) so the schedule doesn&apos;t look automated.
             </p>
           </div>
         </div>
@@ -291,11 +317,35 @@ export default function ScheduleSettings() {
           </div>
         </div>
 
-        {/* Watermark Handle */}
+        {/* Branding: Logo, Handle, Watermark */}
         <div className="card mb-6">
-          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>🏷️ Instagram Handle / Watermark</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>🏷️ Branding</h2>
+          <p className="text-sm text-muted mb-4">
+            With a logo set, cards show a logo + handle + tagline header, like a real account&apos;s own
+            branding. Without one, the handle appears as small text in the corner instead.
+          </p>
+
           <div className="form-group mb-4">
-            <label className="form-label">Handle (Shown on card footer)</label>
+            <label className="form-label">Logo / Profile Photo</label>
+            {logoUrl ? (
+              <div className="slider-row" style={{ alignItems: 'center' }}>
+                <img
+                  src={logoUrl}
+                  alt="Current logo"
+                  style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover' }}
+                />
+                <button type="button" className="btn btn-secondary" onClick={handleRemoveLogo}>
+                  Remove logo
+                </button>
+              </div>
+            ) : (
+              <input type="file" accept="image/*" onChange={handleLogoUpload} disabled={uploadingLogo} />
+            )}
+            {uploadingLogo && <p className="text-sm text-muted mt-2">Uploading...</p>}
+          </div>
+
+          <div className="form-group mb-4">
+            <label className="form-label">Handle</label>
             <input
               type="text"
               className="form-input"
@@ -305,6 +355,18 @@ export default function ScheduleSettings() {
               required
             />
           </div>
+
+          <div className="form-group mb-4">
+            <label className="form-label">Tagline (optional second line, only shown with a logo)</label>
+            <input
+              type="text"
+              className="form-input"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="Mangaluru"
+            />
+          </div>
+
           <div className="form-group">
             <label className="form-label">Caption CTA (optional, appended to every caption)</label>
             <input

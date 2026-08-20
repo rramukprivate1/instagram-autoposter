@@ -153,7 +153,7 @@ def upload_image_to_supabase(supabase, image_path: str, storage_name: str) -> st
 # the only branch point below.
 # ------------------------------------------------------------------
 
-def create_single_post(supabase, topic, tone, custom_context, watermark, cta_text, auto_post) -> str:
+def create_single_post(supabase, topic, tone, custom_context, watermark, cta_text, auto_post, logo_url, tagline) -> str:
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
         content = generate_quote(topic, tone, custom_context)
         duplicate, similarity = is_duplicate(content["quote"])
@@ -167,7 +167,7 @@ def create_single_post(supabase, topic, tone, custom_context, watermark, cta_tex
     image_path = render_quote_card(
         quote=content["quote"], caption=content["caption"],
         bg_from=content.get("bg_from", "#0d0d0d"), bg_to=content.get("bg_to", "#1a1a2e"),
-        post_id=post_id, watermark=watermark,
+        post_id=post_id, watermark=watermark, logo_url=logo_url, tagline=tagline,
     )
     image_url = upload_image_to_supabase(supabase, image_path, post_id)
     caption = content["caption"] + (f"\n\n{cta_text}" if cta_text else "")
@@ -188,7 +188,7 @@ def create_single_post(supabase, topic, tone, custom_context, watermark, cta_tex
 
 def create_carousel_post(
     supabase, topic, tone, custom_context, watermark, cta_text,
-    auto_post, min_slides, max_slides,
+    auto_post, min_slides, max_slides, logo_url, tagline,
 ) -> str:
     slide_count = random.randint(min_slides, max_slides)
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
@@ -203,7 +203,7 @@ def create_carousel_post(
     post_id = str(uuid.uuid4())
     slide_paths = render_carousel_slides(
         series["slides"], series.get("bg_from", "#0d0d0d"), series.get("bg_to", "#1a1a2e"),
-        post_id=post_id, watermark=watermark,
+        post_id=post_id, watermark=watermark, logo_url=logo_url, tagline=tagline,
     )
     slide_urls = [
         upload_image_to_supabase(supabase, path, f"{post_id}_slide{i + 1}")
@@ -308,6 +308,8 @@ def run() -> None:
     carousel_probability = float(settings.get("carousel_probability", "0.25"))
     min_slides = int(settings.get("carousel_min_slides", "3"))
     max_slides = int(settings.get("carousel_max_slides", "6"))
+    logo_url = settings.get("logo_url", "").strip()
+    tagline = settings.get("watermark_tagline", "").strip()
 
     make_carousel = topic.get("allow_carousel", True) and random.random() < carousel_probability
     logger.info(f"Topic: {topic['name']} | Tone: {tone['name']} | Format: {'carousel' if make_carousel else 'single'}")
@@ -316,11 +318,11 @@ def run() -> None:
         if make_carousel:
             post_id, post_record = create_carousel_post(
                 supabase, topic, tone, custom_context, watermark, cta_text,
-                auto_post, min_slides, max_slides,
+                auto_post, min_slides, max_slides, logo_url, tagline,
             )
         else:
             post_id, post_record = create_single_post(
-                supabase, topic, tone, custom_context, watermark, cta_text, auto_post,
+                supabase, topic, tone, custom_context, watermark, cta_text, auto_post, logo_url, tagline,
             )
     except Exception as e:
         logger.error(f"Post generation failed, slot NOT marked as fired (will retry next check): {e}")

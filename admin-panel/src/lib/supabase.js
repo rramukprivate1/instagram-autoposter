@@ -80,6 +80,27 @@ export const fetchPosts = (status = null, limit = 50) => {
 export const updatePostStatus = (id, status) =>
   supabase.from('posts').update({ status }).eq('id', id)
 
+// ── Carousel slides ───────────────────────────────────────────────────────────
+
+export const fetchPostSlides = (postId) =>
+  supabase.from('post_slides').select('*').eq('post_id', postId).order('slide_index')
+
+export const deleteSlide = (slideId) =>
+  supabase.from('post_slides').delete().eq('id', slideId)
+
+// ── Logo upload ───────────────────────────────────────────────────────────────
+// Reuses the existing post-images bucket under a logos/ prefix, rather than
+// requiring a brand-new bucket with its own storage policies.
+
+export const uploadLogo = async (file) => {
+  const ext = file.name.split('.').pop()
+  const path = `logos/brand-logo-${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('post-images').upload(path, file, { upsert: true })
+  if (error) throw error
+  const { data } = supabase.storage.from('post-images').getPublicUrl(path)
+  return data.publicUrl
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 export const fetchSettings = async () => {

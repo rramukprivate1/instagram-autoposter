@@ -5,6 +5,8 @@ Left-aligned, multi-stanza layout on a near-black background - built to read
 like a short piece of real writing, not a generic centered quote template.
 """
 import os
+import io
+import requests
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from config import IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_OUTPUT_DIR
@@ -143,6 +145,60 @@ def fit_stanzas(draw: ImageDraw.ImageDraw, text: str, max_text_width: int, max_b
     return wrapped, height, line_h, font, line_gap, stanza_gap
 
 
+_logo_cache = {}  # per-run cache: url -> circular-cropped Image, avoids re-downloading per carousel slide
+
+
+def _fetch_circular_logo(logo_url: str, diameter: int):
+    if logo_url in _logo_cache:
+        return _logo_cache[logo_url]
+    try:
+        resp = requests.get(logo_url, timeout=10)
+        resp.raise_for_status()
+        img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        img = img.resize((diameter, diameter), Image.LANCZOS)
+        mask = Image.new("L", (diameter, diameter), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, diameter, diameter), fill=255)
+        img.putalpha(mask)
+        _logo_cache[logo_url] = img
+        return img
+    except Exception as e:
+        print(f"Could not load logo from {logo_url}: {e}. Skipping logo header.")
+        _logo_cache[logo_url] = None
+        return None
+
+
+def draw_logo_header(img: Image.Image, draw: ImageDraw.ImageDraw, logo_url: str, handle: str, tagline: str) -> int:
+    """
+    Draws a logo + handle + optional tagline as a header block, like a real
+    account's branding on its own quote cards. Returns the y-coordinate
+    where it's safe to start the main text below this header (0 if no
+    logo was set/loadable, meaning the caller should lay out as usual).
+    """
+    if not logo_url:
+        return 0
+
+    diameter = 84
+    margin_left = int(IMAGE_WIDTH * 0.12)
+    top = 70
+
+    logo = _fetch_circular_logo(logo_url, diameter)
+    if logo is None:
+        return 0
+
+    img.paste(logo, (margin_left, top), logo)
+
+    text_x = margin_left + diameter + 20
+    handle_font = get_font(30)
+    handle_y = top + 14
+    draw.text((text_x, handle_y), handle, font=handle_font, fill=TEXT_COLOR)
+
+    if tagline:
+        tagline_font = get_font(22, italic=True)
+        draw.text((text_x, handle_y + 38), tagline, font=tagline_font, fill=LABEL_COLOR)
+
+    return top + diameter + 40  # bottom edge of the header block, plus breathing room
+
+
 def render_card(
     text: str,
     bg_from: str = "#0a0a0a",
@@ -150,6 +206,8 @@ def render_card(
     output_id: str = "post",
     watermark: str = "",
     slide_label: str = None,
+    logo_url: str = "",
+    tagline: str = "",
 ) -> str:
     """
     Generic single-card renderer. Used by render_quote_card() for single
@@ -161,6 +219,12 @@ def render_card(
     one centered block. A single-paragraph string still works fine too.
     Font size auto-shrinks if needed so longer passages never overflow.
 
+    If logo_url is set, a logo + handle + tagline header is drawn at the
+    top (like a real account's own branding) and the small corner
+    watermark is skipped - showing both would be redundant. If logo_url
+    is empty, or the image fails to load, this falls back to the plain
+    text watermark exactly as before.
+
     Returns the path to the saved image.
     """
     os.makedirs(IMAGE_OUTPUT_DIR, exist_ok=True)
@@ -170,16 +234,20 @@ def render_card(
     img = create_gradient_background(IMAGE_WIDTH, IMAGE_HEIGHT, bg_from, bg_to)
     draw = ImageDraw.Draw(img)
 
+    header_bottom = draw_logo_header(img, draw, logo_url, watermark, tagline)
+
     margin_left = int(IMAGE_WIDTH * 0.12)
     margin_right = int(IMAGE_WIDTH * 0.14)
     max_text_width = IMAGE_WIDTH - margin_left - margin_right
-    max_block_height = int(IMAGE_HEIGHT * 0.72)  # leaves room for top/bottom breathing space + watermark
+    available_top = header_bottom if header_bottom else 0
+    available_height = IMAGE_HEIGHT - available_top
+    max_block_height = int(available_height * 0.72)
 
     wrapped_stanzas, total_height, line_h, font, line_gap, stanza_gap = fit_stanzas(
         draw, text, max_text_width, max_block_height
     )
 
-    y = (IMAGE_HEIGHT - total_height) // 2
+    y = available_top + (available_height - total_height) // 2
     for i, stanza_lines in enumerate(wrapped_stanzas):
         for line in stanza_lines:
             draw.text((margin_left, y), line, font=font, fill=TEXT_COLOR)
@@ -193,7 +261,7 @@ def render_card(
         lw = lbbox[2] - lbbox[0]
         draw.text((IMAGE_WIDTH - lw - margin_right, 64), slide_label, font=label_font, fill=LABEL_COLOR)
 
-    if watermark:
+    if watermark and not header_bottom:
         wm_font = get_font(26, italic=True)
         draw.text((margin_left, IMAGE_HEIGHT - 68), watermark, font=wm_font, fill=WATERMARK_COLOR)
 
@@ -210,9 +278,11 @@ def render_quote_card(
     bg_to: str = "#12100f",
     post_id: str = "post",
     watermark: str = "",
+    logo_url: str = "",
+    tagline: str = "",
 ) -> str:
     """Renders a single quote card. `quote` may contain \\n\\n stanza breaks."""
-    return render_card(quote, bg_from, bg_to, post_id, watermark)
+    return render_card(quote, bg_from, bg_to, post_id, watermark, logo_url=logo_url, tagline=tagline)
 
 
 def render_carousel_slides(
@@ -221,6 +291,8 @@ def render_carousel_slides(
     bg_to: str = "#12100f",
     post_id: str = "post",
     watermark: str = "",
+    logo_url: str = "",
+    tagline: str = "",
 ) -> list:
     """
     Renders one image per slide of a carousel/sequence post, each labeled
@@ -236,6 +308,8 @@ def render_carousel_slides(
             bg_from,
             bg_to,
             output_id=f"{post_id}_slide{i}",
+            logo_url=logo_url,
+            tagline=tagline,
             watermark=watermark,
             slide_label=f"{i} / {total}",
         )
