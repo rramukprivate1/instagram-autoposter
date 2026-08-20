@@ -1,0 +1,46 @@
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+
+# Node / Frontend
+node_modules/
+dist/
+.next/
+.nuxt/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Generated images (temporary)
+/tmp/posts/
+*.jpg
+*.png
+
+# Model cache (large files)
+.cache/
+models/
+
+# Logs
+*.log
