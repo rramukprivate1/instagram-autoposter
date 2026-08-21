@@ -95,7 +95,7 @@ export const deleteSlide = (slideId) =>
 export const uploadLogo = async (file) => {
   const ext = file.name.split('.').pop()
   const path = `logos/brand-logo-${Date.now()}.${ext}`
-  const { error } = await supabase.storage.from('post-images').upload(path, file, { upsert: true })
+  const { error } = await supabase.storage.from('post-images').upload(path, file)
   if (error) throw error
   const { data } = supabase.storage.from('post-images').getPublicUrl(path)
   return data.publicUrl

@@ -100,22 +100,28 @@ def apply_jitter(base_time: str, date_str: str, max_jitter_minutes: int) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
-def get_current_slot(now_local: datetime, posting_windows: list, tolerance_minutes: int, jitter_minutes: int = 0):
+def get_current_slots(now_local: datetime, posting_windows: list, tolerance_minutes: int, jitter_minutes: int = 0):
     """
-    Returns the matching 'HH:MM' string from posting_windows if now_local
-    is within tolerance_minutes of it (after applying that day's jitter),
-    else None.
+    Returns a list of ALL 'HH:MM' base-slot strings from posting_windows
+    currently within tolerance_minutes (after applying that day's jitter) -
+    not just the first. At high slot density (many Posting Times close
+    together, especially combined with jitter), more than one slot's
+    tolerance window can be active at the same 15-min check - returning
+    only the first match would silently skip the others for the whole
+    day, since each is only ever compared against the current moment,
+    not retried later once its own window has passed.
     Note: doesn't handle windows that wrap midnight (e.g. '23:55') specially -
     not needed for a same-day posting schedule, but worth knowing if you add one.
     """
     date_str = now_local.date().isoformat()
     now_minutes = now_local.hour * 60 + now_local.minute
+    matches = []
     for base_slot in posting_windows:
         jittered = apply_jitter(base_slot, date_str, jitter_minutes)
         h, m = map(int, jittered.split(":"))
         if abs(now_minutes - (h * 60 + m)) <= tolerance_minutes:
-            return base_slot  # return the BASE slot name for has_slot_fired/mark_slot_fired bookkeeping
-    return None
+            matches.append(base_slot)
+    return matches
 
 
 def has_slot_fired(supabase, slot_date: str, slot: str) -> bool:
@@ -230,53 +236,19 @@ def create_carousel_post(
 
 
 # ------------------------------------------------------------------
-# Entry point
+# Per-slot generation
 # ------------------------------------------------------------------
 
-def run() -> None:
-    logger.info("=== Instagram Auto-Poster: Checking for a due posting slot ===")
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    settings = load_settings(supabase)
-
-    force_now = os.environ.get("FORCE_NOW", "").strip().lower() == "true"
-    topic_override = os.environ.get("TOPIC_OVERRIDE", "").strip()
-    tone_override = os.environ.get("TONE_OVERRIDE", "").strip()
-
-    tz_name = settings.get("timezone", "Asia/Kolkata")
-    try:
-        posting_windows = json.loads(settings.get("posting_windows", "[]"))
-    except (json.JSONDecodeError, TypeError):
-        raw = settings.get('posting_windows')
-        logger.error(f"posting_windows isn't valid JSON: {raw!r}. Treating as empty.")
-        posting_windows = []
-    tolerance = int(settings.get("slot_tolerance_minutes", "10"))
-    jitter_minutes = int(settings.get("posting_time_jitter_minutes", "20"))
-
-    now_local = datetime.now(ZoneInfo(tz_name))
-    slot_date = now_local.date().isoformat()
-
-    if force_now:
-        logger.info("FORCE_NOW is set - posting immediately, ignoring configured Posting Times.")
-        slot = None  # not tied to any configured slot, so nothing gets marked as "fired" for it
-    else:
-        slot = get_current_slot(now_local, posting_windows, tolerance, jitter_minutes)
-        if not slot:
-            logger.info(f"No posting window due right now ({now_local.strftime('%H:%M')} {tz_name}). Exiting.")
-            return
-        if has_slot_fired(supabase, slot_date, slot):
-            logger.info(f"Slot {slot} already posted today. Exiting.")
-            return
-        logger.info(f"Slot {slot} is due and hasn't fired today - generating a post.")
-
-    topics = load_active_topics(supabase)
-    tones = load_active_tones(supabase)
-    if not topics:
-        logger.error("No active topics found. Add topics in the admin panel.")
-        sys.exit(1)
-    if not tones:
-        logger.error("No active tones found. Add tones in the admin panel.")
-        sys.exit(1)
-
+def generate_and_queue_one(
+    supabase, settings, topics, tones, topic_override, tone_override, recent_topic_id,
+) -> str:
+    """
+    Runs one full generate -> render -> upload -> queue -> email cycle,
+    for one due slot. Returns the topic_id it ended up using, so a run
+    handling several due slots at once can feed that back in as the next
+    iteration's "avoid this topic" hint - without it, generating 5 posts
+    in one run could pick the same topic for all 5.
+    """
     if topic_override:
         matched = next((t for t in topics if t["name"].lower() == topic_override.lower()), None)
         if not matched:
@@ -285,7 +257,6 @@ def run() -> None:
         topic = matched
         logger.info(f"Using topic_override: {topic['name']}")
     else:
-        recent_topic_id = load_most_recent_topic_id(supabase)
         topic = pick_topic(topics, recent_topic_id)
 
     if tone_override:
@@ -314,25 +285,15 @@ def run() -> None:
     make_carousel = topic.get("allow_carousel", True) and random.random() < carousel_probability
     logger.info(f"Topic: {topic['name']} | Tone: {tone['name']} | Format: {'carousel' if make_carousel else 'single'}")
 
-    try:
-        if make_carousel:
-            post_id, post_record = create_carousel_post(
-                supabase, topic, tone, custom_context, watermark, cta_text,
-                auto_post, min_slides, max_slides, logo_url, tagline,
-            )
-        else:
-            post_id, post_record = create_single_post(
-                supabase, topic, tone, custom_context, watermark, cta_text, auto_post, logo_url, tagline,
-            )
-    except Exception as e:
-        logger.error(f"Post generation failed, slot NOT marked as fired (will retry next check): {e}")
-        sys.exit(1)
-
-    # Only mark the slot fired once a post actually exists - protects
-    # against a transient failure permanently losing this slot for today.
-    # Forced runs aren't tied to a configured slot, so there's nothing to mark.
-    if slot:
-        mark_slot_fired(supabase, slot_date, slot)
+    if make_carousel:
+        post_id, post_record = create_carousel_post(
+            supabase, topic, tone, custom_context, watermark, cta_text,
+            auto_post, min_slides, max_slides, logo_url, tagline,
+        )
+    else:
+        post_id, post_record = create_single_post(
+            supabase, topic, tone, custom_context, watermark, cta_text, auto_post, logo_url, tagline,
+        )
 
     if not auto_post:
         email_data = {**post_record, "topic_name": topic["name"], "tone_name": tone["name"]}
@@ -341,7 +302,74 @@ def run() -> None:
         else:
             logger.warning("Approval email failed, but post is queued in DB - it's still visible in the admin panel.")
 
-    logger.info(f"=== Generation Run Complete: post {post_id} ({post_record['status']}) ===")
+    logger.info(f"=== post {post_id} queued ({post_record['status']}) ===")
+    return topic["id"]
+
+
+# ------------------------------------------------------------------
+# Entry point
+# ------------------------------------------------------------------
+
+def run() -> None:
+    logger.info("=== Instagram Auto-Poster: Checking for due posting slots ===")
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    settings = load_settings(supabase)
+
+    force_now = os.environ.get("FORCE_NOW", "").strip().lower() == "true"
+    topic_override = os.environ.get("TOPIC_OVERRIDE", "").strip()
+    tone_override = os.environ.get("TONE_OVERRIDE", "").strip()
+
+    tz_name = settings.get("timezone", "Asia/Kolkata")
+    try:
+        posting_windows = json.loads(settings.get("posting_windows", "[]"))
+    except (json.JSONDecodeError, TypeError):
+        raw = settings.get('posting_windows')
+        logger.error(f"posting_windows isn't valid JSON: {raw!r}. Treating as empty.")
+        posting_windows = []
+    tolerance = int(settings.get("slot_tolerance_minutes", "10"))
+    jitter_minutes = int(settings.get("posting_time_jitter_minutes", "20"))
+
+    now_local = datetime.now(ZoneInfo(tz_name))
+    slot_date = now_local.date().isoformat()
+
+    if force_now:
+        logger.info("FORCE_NOW is set - posting immediately, ignoring configured Posting Times.")
+        due_slots = [None]  # one forced post; None means "not tied to a configured slot"
+    else:
+        matched = get_current_slots(now_local, posting_windows, tolerance, jitter_minutes)
+        due_slots = [s for s in matched if not has_slot_fired(supabase, slot_date, s)]
+        if not due_slots:
+            logger.info(f"No posting window due right now ({now_local.strftime('%H:%M')} {tz_name}). Exiting.")
+            return
+        logger.info(f"{len(due_slots)} slot(s) due this check: {due_slots}")
+
+    topics = load_active_topics(supabase)
+    tones = load_active_tones(supabase)
+    if not topics:
+        logger.error("No active topics found. Add topics in the admin panel.")
+        sys.exit(1)
+    if not tones:
+        logger.error("No active tones found. Add tones in the admin panel.")
+        sys.exit(1)
+
+    recent_topic_id = load_most_recent_topic_id(supabase)
+
+    for slot in due_slots:
+        try:
+            recent_topic_id = generate_and_queue_one(
+                supabase, settings, topics, tones, topic_override, tone_override, recent_topic_id,
+            )
+        except Exception as e:
+            logger.error(f"Post generation failed for slot {slot}, NOT marked as fired (will retry next check): {e}")
+            continue  # one failed slot in a multi-slot run shouldn't block the rest
+
+        # Only mark fired once a post actually exists - protects against a
+        # transient failure permanently losing this slot for today. Forced
+        # runs aren't tied to a configured slot, so there's nothing to mark.
+        if slot:
+            mark_slot_fired(supabase, slot_date, slot)
+
+    logger.info(f"=== Generation run complete: {len(due_slots)} slot(s) processed ===")
 
 
 if __name__ == "__main__":
