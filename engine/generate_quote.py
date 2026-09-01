@@ -14,24 +14,35 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=GEMINI_API_KEY)
 
 
-def build_system_prompt(topic: dict, tone: dict, custom_context: str = "") -> str:
-    """Dynamically assembles the AI system prompt from topic, tone, and custom context."""
+def build_system_prompt(topic: dict, tone: dict, custom_context: str = "", recent_quotes: list = None) -> str:
+    """Dynamically assembles the AI system prompt from topic, tone, custom context, and recent output."""
     context_line = f"\nADDITIONAL CONTEXT FROM ADMIN: {custom_context}" if custom_context else ""
+    avoid_block = ""
+    if recent_quotes:
+        recent_list = "\n".join(f'- "{q}"' for q in recent_quotes)
+        avoid_block = f"""
+
+RECENTLY POSTED (last several posts, across all topics) - do NOT reuse these opening
+phrases, sentence structures, or specific vocabulary. If your first instinct echoes any
+of these in wording or shape, choose a genuinely different angle instead:
+{recent_list}"""
     return f"""You are a writer creating short-form Instagram text posts for an audience aged 15 to 30.
 The visual style is: black background, serif type, left-aligned - closer to a page from someone's
 private notebook than a glossy motivational poster. The words need to carry that entirely.
 
 TOPIC: {topic['name']} — {topic.get('description', '')}
-TONE: {tone['name']} — {tone.get('description', '')}{context_line}
+TONE: {tone['name']} — {tone.get('description', '')}{context_line}{avoid_block}
 
 Your task:
 1. Write ONE original passage related to the TOPIC - structured like a short piece of real
    writing, not a single tidy one-liner:
-   - Optionally open with a short direct-address or hook line (e.g. "Some days:" / "Real talk:" /
-     "To the one still trying:") - only if it genuinely fits the TOPIC and TONE, don't force it
-     onto every post.
+   - You may open with a short direct-address or hook line ONLY if it genuinely fits - invent
+     your own phrasing for it rather than reaching for a familiar or expected opener, and vary
+     whether you use one at all from post to post.
    - Then 2-3 short stanzas, each just 1-2 short sentences, building on each other rather than
      restating the same idea.
+   - Vary sentence rhythm and structure meaningfully from typical motivational-quote phrasing -
+     avoid defaulting to the same handful of sentence shapes every time.
    - Total length under ~55 words so it still reads in a few seconds on a phone.
    - Write it as ONE string with real line breaks: use \\n between lines within a stanza, and
      \\n\\n (a blank line) between stanzas.
@@ -46,18 +57,21 @@ IMPORTANT RULES:
 - The passage must be 100% original and creative.
 - Stay strictly within Instagram Community Guidelines.
 - Avoid hate speech, violence, explicit content, or anything that could harm the audience.
+- No engagement-bait phrasing ("comment X to get this in your DMs", "like and follow to see
+  more", fake urgency, etc.) anywhere in the quote OR caption - Instagram actively down-ranks
+  this, and it invites low-quality spam replies instead of real engagement.
 - It should feel real, specific, and earned - not a generic template quote.
 - Output ONLY valid JSON — no markdown, no explanation. Format:
 {{"quote": "line one\\n\\nstanza two line one\\nstanza two line two", "caption": "...",
 "hashtags": ["tag1", "tag2", ...], "bg_from": "#hexcode", "bg_to": "#hexcode"}}"""
 
 
-def generate_quote(topic: dict, tone: dict, custom_context: str = "") -> dict:
+def generate_quote(topic: dict, tone: dict, custom_context: str = "", recent_quotes: list = None) -> dict:
     """
     Calls Gemini API and returns a dict with quote, caption, hashtags, bg_from, bg_to.
     Raises ValueError if parsing fails.
     """
-    prompt = build_system_prompt(topic, tone, custom_context)
+    prompt = build_system_prompt(topic, tone, custom_context, recent_quotes)
     logger.info(f"Generating quote for topic='{topic['name']}' tone='{tone['name']}'")
 
     model = genai.GenerativeModel(
@@ -84,14 +98,24 @@ def generate_quote(topic: dict, tone: dict, custom_context: str = "") -> dict:
     return data
 
 
-def build_series_prompt(topic: dict, tone: dict, slide_count: int, custom_context: str = "") -> str:
+def build_series_prompt(
+    topic: dict, tone: dict, slide_count: int, custom_context: str = "", recent_quotes: list = None,
+) -> str:
     """Assembles the system prompt for a multi-slide carousel post on ONE topic."""
     context_line = f"\nADDITIONAL CONTEXT FROM ADMIN: {custom_context}" if custom_context else ""
+    avoid_block = ""
+    if recent_quotes:
+        recent_list = "\n".join(f'- "{q}"' for q in recent_quotes)
+        avoid_block = f"""
+
+RECENTLY POSTED (last several posts, across all topics) - do NOT reuse these opening
+phrases, sentence structures, or specific vocabulary. Choose a genuinely different angle:
+{recent_list}"""
     return f"""You are an Instagram content creator specializing in motivational and life-advice content
 for an audience aged 15 to 30.
 
 TOPIC: {topic['name']} — {topic.get('description', '')}
-TONE: {tone['name']} — {tone.get('description', '')}{context_line}
+TONE: {tone['name']} — {tone.get('description', '')}{context_line}{avoid_block}
 
 Your task: create ONE carousel post (a swipeable series of {slide_count} images) that
 explores the TOPIC as a connected series - e.g. "{slide_count} signs...", numbered steps,
@@ -120,13 +144,15 @@ IMPORTANT RULES:
 "bg_from": "#hexcode", "bg_to": "#hexcode"}}"""
 
 
-def generate_quote_series(topic: dict, tone: dict, slide_count: int = 4, custom_context: str = "") -> dict:
+def generate_quote_series(
+    topic: dict, tone: dict, slide_count: int = 4, custom_context: str = "", recent_quotes: list = None,
+) -> dict:
     """
     Calls Gemini API and returns a dict with slides (list[str]), caption,
     hashtags, bg_from, bg_to - used for carousel/sequence posts.
     Raises ValueError if parsing fails.
     """
-    prompt = build_series_prompt(topic, tone, slide_count, custom_context)
+    prompt = build_series_prompt(topic, tone, slide_count, custom_context, recent_quotes)
     logger.info(f"Generating {slide_count}-slide series for topic='{topic['name']}' tone='{tone['name']}'")
 
     model = genai.GenerativeModel(

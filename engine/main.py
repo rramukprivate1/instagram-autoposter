@@ -46,7 +46,7 @@ config.require([
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-MAX_GENERATION_RETRIES = 3
+MAX_GENERATION_RETRIES = 5
 STORAGE_BUCKET = "post-images"
 
 
@@ -70,6 +70,19 @@ def load_settings(supabase) -> dict:
 def load_most_recent_topic_id(supabase):
     result = supabase.table("posts").select("topic_id").order("created_at", desc=True).limit(1).execute()
     return result.data[0]["topic_id"] if result.data else None
+
+
+def load_recent_quotes(supabase, limit: int = 10) -> list:
+    """
+    Pulls the text of the last several posts (across all topics) to inject
+    into the generation prompt as "don't repeat this." This is a proactive
+    complement to is_duplicate()'s after-the-fact embedding check - it
+    steers the model away from repeating phrasing/structure/vocabulary
+    BEFORE generation, which catches "feels repetitive" cases that aren't
+    similar enough in meaning to trip a semantic similarity threshold.
+    """
+    result = supabase.table("posts").select("quote").order("created_at", desc=True).limit(limit).execute()
+    return [row["quote"].split("\n")[0] for row in result.data]  # first line is enough context
 
 
 def pick_topic(topics: list, recent_topic_id) -> dict:
@@ -160,8 +173,9 @@ def upload_image_to_supabase(supabase, image_path: str, storage_name: str) -> st
 # ------------------------------------------------------------------
 
 def create_single_post(supabase, topic, tone, custom_context, watermark, cta_text, auto_post, logo_url, tagline) -> str:
+    recent_quotes = load_recent_quotes(supabase)
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
-        content = generate_quote(topic, tone, custom_context)
+        content = generate_quote(topic, tone, custom_context, recent_quotes)
         duplicate, similarity = is_duplicate(content["quote"])
         if not duplicate:
             break
@@ -197,8 +211,9 @@ def create_carousel_post(
     auto_post, min_slides, max_slides, logo_url, tagline,
 ) -> str:
     slide_count = random.randint(min_slides, max_slides)
+    recent_quotes = load_recent_quotes(supabase)
     for attempt in range(1, MAX_GENERATION_RETRIES + 1):
-        series = generate_quote_series(topic, tone, slide_count, custom_context)
+        series = generate_quote_series(topic, tone, slide_count, custom_context, recent_quotes)
         duplicate, similarity = is_duplicate(series["slides"][0])
         if not duplicate:
             break

@@ -164,6 +164,12 @@ export default function PostQueue() {
                   {post.tones && <span className="badge badge-inactive">🎭 {post.tones.name}</span>}
                 </div>
 
+                {post.status === 'publish_failed' && post.error_message && (
+                  <p className="text-sm mt-2" style={{ color: '#f87171' }}>
+                    ⚠️ {post.error_message}
+                  </p>
+                )}
+
                 {post.status === 'pending' && (
                   <div className="post-card-actions">
                     <button className="btn btn-success btn-sm" onClick={() => handleAction(post.id, 'approved')}>

@@ -27,6 +27,33 @@ GRAPH_API_VERSION = "v25.0"
 GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
 
+def graph_request(method: str, url: str, **kwargs) -> dict:
+    """
+    Wraps a Graph API call so failures carry Meta's ACTUAL error detail
+    (code, subcode, message, fbtrace_id) instead of requests' generic
+    "400 Client Error: Bad Request" - that generic message says nothing
+    about why Instagram rejected the request, which made real failures
+    here undiagnosable from logs alone. Every Graph API call in this file
+    goes through this instead of calling requests directly.
+    """
+    resp = requests.request(method, url, timeout=30, **kwargs)
+    try:
+        data = resp.json()
+    except ValueError:
+        resp.raise_for_status()
+        raise RuntimeError(f"Graph API returned a non-JSON response: {resp.text[:300]}")
+
+    if resp.status_code >= 400:
+        err = data.get("error", {})
+        raise RuntimeError(
+            f"Graph API error (HTTP {resp.status_code}): "
+            f"code={err.get('code')} subcode={err.get('error_subcode')} "
+            f"type={err.get('type')} message={err.get('message', data)} "
+            f"fbtrace_id={err.get('fbtrace_id')}"
+        )
+    return data
+
+
 def create_media_container(image_url: str, caption: str) -> str:
     """
     Step 1: Creates a media container on Instagram.
@@ -39,9 +66,7 @@ def create_media_container(image_url: str, caption: str) -> str:
         "access_token": IG_ACCESS_TOKEN,
     }
     logger.info(f"Creating media container for image: {image_url[:60]}...")
-    resp = requests.post(url, data=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = graph_request("POST", url, data=payload)
     container_id = data.get("id")
     if not container_id:
         raise RuntimeError(f"No container ID returned: {data}")
@@ -53,9 +78,8 @@ def wait_for_container(container_id: str, max_retries: int = 10) -> None:
     """Polls until the media container status is FINISHED."""
     url = f"{GRAPH_API_BASE}/{container_id}"
     for attempt in range(max_retries):
-        resp = requests.get(url, params={"fields": "status_code", "access_token": IG_ACCESS_TOKEN})
-        resp.raise_for_status()
-        status = resp.json().get("status_code", "")
+        data = graph_request("GET", url, params={"fields": "status_code", "access_token": IG_ACCESS_TOKEN})
+        status = data.get("status_code", "")
         logger.info(f"Container status [{attempt + 1}/{max_retries}]: {status}")
         if status == "FINISHED":
             return
@@ -77,12 +101,10 @@ def create_carousel_item_container(image_url: str) -> str:
         "is_carousel_item": "true",
         "access_token": IG_ACCESS_TOKEN,
     }
-    resp = requests.post(url, data=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    container_id = data.get("id")
+    resp = graph_request("POST", url, data=payload)
+    container_id = resp.get("id")
     if not container_id:
-        raise RuntimeError(f"No carousel item container ID returned: {data}")
+        raise RuntimeError(f"No carousel item container ID returned: {resp}")
     return container_id
 
 
@@ -99,9 +121,7 @@ def create_carousel_container(item_container_ids: list, caption: str) -> str:
         "access_token": IG_ACCESS_TOKEN,
     }
     logger.info(f"Creating carousel container with {len(item_container_ids)} slides...")
-    resp = requests.post(url, data=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = graph_request("POST", url, data=payload)
     container_id = data.get("id")
     if not container_id:
         raise RuntimeError(f"No carousel container ID returned: {data}")
@@ -137,9 +157,7 @@ def publish_container(container_id: str) -> str:
         "access_token": IG_ACCESS_TOKEN,
     }
     logger.info(f"Publishing container: {container_id}")
-    resp = requests.post(url, data=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = graph_request("POST", url, data=payload)
     post_id = data.get("id")
     if not post_id:
         raise RuntimeError(f"No post ID returned: {data}")
@@ -206,8 +224,12 @@ def publish_approved_posts() -> None:
             time.sleep(2)  # Avoid hammering the API
 
         except Exception as e:
-            logger.error(f"Failed to publish post {post['id']}: {e}")
-            supabase.table("posts").update({"status": "publish_failed"}).eq("id", post["id"]).execute()
+            error_detail = str(e)
+            logger.error(f"Failed to publish post {post['id']}: {error_detail}")
+            supabase.table("posts").update({
+                "status": "publish_failed",
+                "error_message": error_detail[:1000],
+            }).eq("id", post["id"]).execute()
 
 
 if __name__ == "__main__":
